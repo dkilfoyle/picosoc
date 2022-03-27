@@ -1,7 +1,7 @@
 name = picosoc
 hdl  = hdl/icesugar.v hdl/ice40up5k_spram.v hdl/spimemio.v hdl/simpleuart.v hdl/picosoc.v hdl/picorv32.v
 pcf  = icesugar.pcf
-src  = src/start.s src/firmware.c src/animate.c
+src  = src/start.s src/firmware.c src/neopixel.c src/uart.c src/spi.c src/led.c src/mem.c
 
 RV_PRE = riscv32-unknown-elf
 CFLAGS = 
