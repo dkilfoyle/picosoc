@@ -2,7 +2,7 @@
 
 ## Installation
 
-1. Install Apio for Windows
+1. Install https://github.com/FPGAwars/apio for Windows
 2. Install RISCV GCC in WSL
 3. To build and upload picocsoc
 
