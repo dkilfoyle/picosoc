@@ -118,51 +118,5 @@ module ws2812 (
 
         endcase
 
-    `ifdef FORMAL
-        // start in reset
-        initial restrict(reset);
-
-        // past valid signal
-        reg f_past_valid = 0;
-        always @(posedge clk)
-            f_past_valid <= 1'b1;
-
-        // check everything is zeroed on the reset signal
-        always @(posedge clk)
-            if (f_past_valid)
-                if ($past(reset)) begin
-                    assert(bit_counter == t_reset);
-                    assert(rgb_counter == 23);
-                end
-
-        always @(posedge clk) begin
-            assert(bit_counter <= t_reset);
-            assert(rgb_counter <= 23);
-            assert(led_counter <= NUM_LEDS - 1);
-
-            if(state == STATE_DATA) begin
-                assert(bit_counter <= t_period);
-                // led counter decrements
-                if($past(state) == STATE_DATA && $past(rgb_counter) == 0 && $past(bit_counter) == 0)
-                    assert(led_counter == $past(led_counter) - 1);
-            end
-
-            if(state == STATE_RESET) begin
-                assert(data == 0);
-                assert(bit_counter <= t_reset);
-            end
-        end
-
-        // leds < NUM_LEDSs
-        always @(posedge clk)
-            assume(led_num < NUM_LEDS);
-
-        // check that writes end up in the led register
-        always @(posedge clk)
-            if (f_past_valid)
-                if(!$past(reset) && $past(write))
-                    assert(led_reg[$past(led_num)] == $past(rgb_data));
-            
-    `endif
-    
+  
 endmodule
