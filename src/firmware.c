@@ -25,6 +25,7 @@
 #include "led.h"
 #include "neopixel.h"
 #include "spi.h"
+#include "lcd.h"
 
 // Memory Map
 // 0x00000000 - 0x00FFFFFF		Internal SRAM
@@ -94,9 +95,11 @@ void main()
 	while (getchar_prompt("Press ENTER to continue..\n") != '\r') { /* wait */ }
 
 	rgb_led(0,255,0); // green
-	pmod_led(0b11111111); // all on
+	// pmod_led(0b11111111); // all on
 
-	print_banner();
+	lcd_init();
+
+	print_banner(1);
 
 	cmd_memtest();
 	print("\n");
@@ -122,6 +125,7 @@ void main()
 		print("   [e] Echo UART\n");
 		print("   [l] Set LED register\n");
 		print("   [n] Increment Neopixel #1 Blue\n");
+		print("   [c] Drawtest\n");
 		print("\n");
 
 		for (int rep = 10; rep > 0; rep--)
@@ -170,6 +174,9 @@ void main()
 			case 'n':
 				color.b++;
 				set_ws2812(color, 1);
+				break;
+			case 'c':
+				lcd_test();
 				break;
 			default:
 				continue;

@@ -42,11 +42,11 @@ set_io P2_7         42
 set_io P2_8         37
 
 # PMOD 3
-set_io SPI_LCD_CS    34 
-set_io SPI_LCD_SDA   31
-set_io SPI_LCD_DC    27
-set_io SPI_LCD_SCL   25
-set_io SPI_LCD_RES   23
+set_io LCD_SPI_CS    34 
+set_io LCD_SPI_SDA   31
+set_io LCD_SPI_DC    27
+set_io LCD_SPI_SCL   25
+set_io LCD_SPI_RES   23
 #set_io SPI_LCD_P3_6  26
 #set_io SPI_LCD_P3_7  28
 #set_io SPI_LCD_P3_8  32

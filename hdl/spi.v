@@ -2,7 +2,7 @@ module spi #(
 	parameter integer CLOCK_FREQ_HZ = 0,
 	parameter integer CS_LENGTH = 32
 ) (
-  input clk,
+	input clk,
 	input resetn,
 
 	input ctrl_wr,

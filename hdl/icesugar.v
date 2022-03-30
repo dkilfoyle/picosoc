@@ -150,36 +150,36 @@ module icesugar (
 	reg led_write = 0;
 	reg [7:0] led_num = 0;
 	reg [23:0] led_rgb_data = 0;
-	ws2812 #(.NUM_LEDS(7)) ws2812_inst(.data(neopixel_pin), .clk(CLK), .reset(!resetn), .rgb_data(led_rgb_data), .led_num(led_num), .write(led_write));
+	// ws2812 #(.NUM_LEDS(7)) ws2812_inst(.data(neopixel_pin), .clk(CLK), .reset(!resetn), .rgb_data(led_rgb_data), .led_num(led_num), .write(led_write));
 
 	// spi st7735 peripheral
-	reg lcd_spi_wr;
-	reg lcd_spi_ready;
-	spi st7735_inst(
-		.clk(clk),
-		.resetn(resetn),
-		.ctrl_wr(lcd_spi_wr),
-		.ctrl_addr(iomem_addr[7:0]),
-		.ctrl_wdat(iomem_wdata),
-		.ctrl_done(lcd_spi_ready),
-		.mosi(LCD_SPI_SDA),
-		.sclk(LCD_SPI_SCL),
-		.cs(LCD_SPI_CS),
-		.dc(LCD_SPI_DC),
-		.rst(LCD_SPI_RES)
-	);
+	// reg lcd_spi_wr;
+	// reg lcd_spi_ready;
+	// spi st7735_inst(
+	// 	.clk(CLK),
+	// 	.resetn(resetn),
+	// 	.ctrl_wr(lcd_spi_wr),
+	// 	.ctrl_addr(iomem_addr[7:0]),
+	// 	.ctrl_wdat(iomem_wdata),
+	// 	.ctrl_done(lcd_spi_ready),
+	// 	.mosi(LCD_SPI_SDA),
+	// 	.sclk(LCD_SPI_SCL),
+	// 	.cs(LCD_SPI_CS),
+	// 	.dc(LCD_SPI_DC),
+	// 	.rst(LCD_SPI_RES)
+	// );
 
 	always @(posedge CLK) begin
-		led_write <= 0;
-		lcd_spi_wr <= 0;
+		// led_write <= 0;
+		// lcd_spi_wr <= 0;
 		if (!resetn) begin
 			gpio_led_pmod <= 0;
 			gpio_led_r <= 0;
 			gpio_led_g <= 0;
 			gpio_led_b <= 0;
-			led_write < = 0;
-			led_num < = 0;
-			led_rgb_data = 0;
+			// led_write <= 0;
+			// led_num <= 0;
+			// led_rgb_data <= 0;
 		end else begin
 			iomem_ready <= 0;
 			if (iomem_valid && !iomem_ready && iomem_addr[31:24] == 8'h 03) begin
@@ -204,8 +204,14 @@ module icesugar (
 				if (iomem_wstrb[3]) led_rgb_data[23:16] <= iomem_wdata[31:24];
 			end
 			else if (iomem_valid && !iomem_ready && iomem_addr[31:24] == 8'h05) begin
-				iomem_ready = lcd_spi_ready;
-				lcd_spi_wr <= lcd_spi_ready ? 0 : iomem_wstrb;
+				// iomem_ready <= lcd_spi_ready;
+				// lcd_spi_wr <= lcd_spi_ready ? 0 : iomem_wstrb;
+				iomem_ready <= 1;
+				if (iomem_addr[7:0] == 8'h04) LCD_SPI_CS = iomem_wdata[0];
+				if (iomem_addr[7:0] == 8'h10) LCD_SPI_DC = iomem_wdata[0];
+				if (iomem_addr[7:0] == 8'h14) LCD_SPI_RES = iomem_wdata[0];
+				if (iomem_addr[7:0] == 8'h08) LCD_SPI_SDA = iomem_wdata[0];
+				if (iomem_addr[7:0] == 8'h0c) LCD_SPI_SCL = iomem_wdata[0];
 			end
 		end
 	end
