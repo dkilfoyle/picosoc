@@ -1,137 +1,113 @@
-module spi #(
-	parameter integer CLOCK_FREQ_HZ = 0,
-	parameter integer CS_LENGTH = 32
-) (
-	input clk,
-	input resetn,
+// adapted from:
+// femtorv32, a minimalistic RISC-V RV32I core
+//       Bruno Levy, 2020-2021
 
-	input ctrl_wr,
-	input ctrl_rd,
-	input [ 7:0] ctrl_addr,
-	input [31:0] ctrl_wdat,
-	output reg [31:0] ctrl_rdat,
-	output reg ctrl_done,
 
-	inout mosi, sclk, cs, dc, rst
+module clk_divider #(
+   parameter width=1
+)(
+   input  wire clk,               // input system clock
+   output wire CLK,               // SSD1351 clock
+   output wire CLK_falling_edge   // pulses at each falling edge of CLK		   
 );
-	reg spi_mosi, spi_sclk, spi_cs, spi_ds, spi_rst;
+   reg [width-1:0] slow_cnt;
+   always @(posedge clk) begin
+      slow_cnt <= slow_cnt + 1;
+   end
+   assign CLK = slow_cnt[width-1];
+   assign CLK_falling_edge = (slow_cnt == (1 << width)-1);
+endmodule   
 
-	reg mode_cpol;
-	reg mode_cpha;
+module SPI_interface(
+    input wire 	      clk,       // system clock
+    input wire 	      wstrb,     // write strobe (use one of sel_xxx to select dest)
+    input wire 	      sel_cntl,  // wdata[0]: !CS;  wdata[1]: RST
+    input wire 	      sel_cmd,   // send 8-bits command to display
+    input wire 	      sel_dat,   // send 8-bits data to display
+    input wire 	      sel_dat16, // send 16-bits data to display
 
-	reg [7:0] prescale_cnt;
-	reg [7:0] prescale_cfg;
-	reg [7:0] spi_data;
-	reg [4:0] spi_state;
+    input wire [31:0] wdata,    // data to be written
 
-	SB_IO #(
-		.PIN_TYPE(6'b 0110_01),
-		.PULLUP(1'b 0)
-	) io_mosi (
-		.PACKAGE_PIN(mosi),
-		.D_OUT_0(spi_mosi)
-	);
+    output wire       wbusy,    // asserted if the driver is busy sending data
 
-	SB_IO #(
-		.PIN_TYPE(6'b 0110_01),
-		.PULLUP(1'b 0)
-	) io_sclk (
-		.PACKAGE_PIN(sclk),
-		.D_OUT_0(spi_sclk ^ ~mode_cpol)
-	);
+                           // SSD1351 pins	       
+    output 	      DIN, // data in
+    output 	      CLK, // clock
+    output reg 	      CS,  // chip select (active low)
+    output reg 	      DC,  // data (high) / command (low)
+    output reg 	      RST  // reset (active low)
+);
+  
+   initial begin
+      DC  = 1'b0;
+      RST = 1'b0;
+      CS  = 1'b1;
+   end
+   
+   wire CLK_falling_edge;
+   
+   generate
+		clk_divider   #(
+							.width(1)
+					)slow_clk(
+							.clk(clk),
+							.CLK(CLK),
+							.CLK_falling_edge(CLK_falling_edge)
+		);
+	endgenerate
 
-	SB_IO #(
-		.PIN_TYPE(6'b 0110_01),
-		.PULLUP(1'b 0)
-	) io_cs (
-		.PACKAGE_PIN(cs),
-		.D_OUT_0(spi_cs)
-	);
+   // Currently sent bit, 1-based index
+   // (0000 config. corresponds to idle)
+   reg[4:0]  bitcount = 5'b0000;
+   reg[15:0] shifter  = 0;
+   wire      sending  = (bitcount != 0);
 
-	SB_IO #(
-		.PIN_TYPE(6'b 0110_01),
-		.PULLUP(1'b 0)
-	) io_dc (
-		.PACKAGE_PIN(dc),
-		.D_OUT_0(spi_dc)
-	);
+   assign DIN = shifter[15];
+   assign wbusy = sending;
 
-	SB_IO #(
-		.PIN_TYPE(6'b 0110_01),
-		.PULLUP(1'b 0)
-	) io_rst (
-		.PACKAGE_PIN(rst),
-		.D_OUT_0(spi_rst)
-	);
-
-	always @(posedge clk) begin
-		ctrl_rdat <= 'bx;
-		ctrl_done <= 0;
-		if (!resetn) begin
-			spi_mosi <= 0;
-			spi_sclk <= 1;
-			spi_cs <= ~0;
-			spi_rst <= 1;
-			spi_dc <= 0;
-
-			mode_cpol <= 1;
-			mode_cpha <= 1;
-			prescale_cnt <= 0;
-			prescale_cfg <= 0;
-			spi_state <= 0;
-		end else
-		if (!ctrl_done) begin
-			if (ctrl_wr) begin
-				ctrl_done <= 1;
-				if (ctrl_addr == 'h00) prescale_cfg <= ctrl_wdat;
-				if (ctrl_addr == 'h04) begin
-					spi_cs <= ctrl_wdat;
-					ctrl_done <= prescale_cnt == prescale_cfg;
-					prescale_cnt <= prescale_cnt == prescale_cfg ? 0 : prescale_cnt + 1;
-				end
-				if (ctrl_addr == 'h10) begin
-					spi_dc <= ctrl_wdat;
-					ctrl_done <= prescale_cnt == prescale_cfg;
-					prescale_cnt <= prescale_cnt == prescale_cfg ? 0 : prescale_cnt + 1;
-				end
-				if (ctrl_addr == 'h14) begin
-					spi_rst <= ctrl_wdat;
-					ctrl_done <= prescale_cnt == prescale_cfg;
-					prescale_cnt <= prescale_cnt == prescale_cfg ? 0 : prescale_cnt + 1;
-				end
-				if (ctrl_addr == 'h08) begin
-					if (!prescale_cnt) begin
-						if (spi_state == 0) begin
-							spi_data <= ctrl_wdat;
-							spi_mosi <= ctrl_wdat[7];
-						end else begin
-							if (spi_state[0])
-								spi_data <= {spi_data, spi_mosi};
-							else if (spi_state < 16)
-								spi_mosi <= spi_data[7];
-						end
-					end
-					spi_sclk <= spi_state[0] ^ ~mode_cpha;
-					ctrl_done <= spi_state == (mode_cpha ? 15 : 16) && prescale_cnt == prescale_cfg;
-					spi_state <= prescale_cnt == prescale_cfg ? (spi_state[4] ? 0 : spi_state + 1) : spi_state;
-					if (mode_cpha) spi_state[4] <= 0;
-					prescale_cnt <= prescale_cnt == prescale_cfg ? 0 : prescale_cnt + 1;
-				end
-				if (ctrl_addr == 'h0c) begin
-					{mode_cpol, mode_cpha} <= ctrl_wdat;
-					ctrl_done <= prescale_cnt == prescale_cfg;
-					prescale_cnt <= prescale_cnt == prescale_cfg ? 0 : prescale_cnt + 1;
-				end
-			end
-			if (ctrl_rd) begin
-				ctrl_done <= 1;
-				if (ctrl_addr == 'h00) ctrl_rdat <= prescale_cfg;
-				if (ctrl_addr == 'h04) ctrl_rdat <= spi_cs;
-				if (ctrl_addr == 'h08) ctrl_rdat <= spi_data;
-				if (ctrl_addr == 'h0c) ctrl_rdat <= {mode_cpol, mode_cpha};
-				if (ctrl_addr == 'h10) ctrl_rdat <= spi_dc;
-				if (ctrl_addr == 'h14) ctrl_rdat <= spi_rst;
-			end
-		end
-	end
+   /*************************************************************************/
+   
+   always @(posedge clk) begin
+      if(wstrb) begin
+	 if(sel_cntl) begin
+	    CS  <= !wdata[0];
+	    RST <= wdata[1];
+	 end
+	 if(sel_cmd) begin
+	    RST <= 1'b1;
+	    DC <= 1'b0;
+	    shifter <= {wdata[7:0],8'b0};
+	    bitcount <= 8;
+	    CS  <= 1'b1;
+	 end
+	 if(sel_dat) begin
+ 	    RST <= 1'b1;
+	    DC <= 1'b1;
+	    shifter <= {wdata[7:0],8'b0};
+	    bitcount <= 8;
+	    CS  <= 1'b1;
+	 end
+	 if(sel_dat16) begin
+ 	    RST <= 1'b1;
+	    DC <= 1'b1;
+	    shifter <= wdata[15:0];
+	    bitcount <= 16;
+	    CS  <= 1'b1;
+	 end
+      end else begin 
+	 // detect falling edge of slow_clk
+	 if(CLK_falling_edge) begin 
+	    if(sending) begin
+	       if(CS) begin    // first tick activates CS (low)
+		  CS <= 1'b0;
+	       end else begin  // shift on falling edge
+		  bitcount <= bitcount - 5'd1;
+		  shifter <= {shifter[14:0], 1'b0};
+	       end
+	    end else begin     // last tick deactivates CS (high) 
+	       CS  <= 1'b1;  
+	    end
+	 end
+      end
+   end
 endmodule

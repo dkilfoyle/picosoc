@@ -20,12 +20,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include "uart.h"
 #include "mem.h"
-#include "led.h"
-#include "neopixel.h"
+#include "uart.h"
 #include "spi.h"
-#include "lcd.h"
 
 // Memory Map
 // 0x00000000 - 0x00FFFFFF		Internal SRAM
@@ -35,20 +32,28 @@
 // 0x02000008 - 0x0200000B		UART Send/Recv Data Register
 // 0x03000000 - 0xFFFFFFFF		Memory mapped user peripherals
 
+#include "devices/led/led.h"				 // mapped to 0x03000000
+#include "devices/ws2812/neopixel.h" // mapped to 0x04000000
+#include "devices/st7735/lcd.h"			 // mapped to 0x05000000
+
 char getchar_prompt(char *prompt)
 {
 	int32_t c = -1;
 
 	uint32_t cycles_begin, cycles_now, cycles;
-	__asm__ volatile ("rdcycle %0" : "=r"(cycles_begin));
+	__asm__ volatile("rdcycle %0"
+									 : "=r"(cycles_begin));
 
 	if (prompt)
 		print(prompt);
 
-	while (c == -1) {
-		__asm__ volatile ("rdcycle %0" : "=r"(cycles_now));
+	while (c == -1)
+	{
+		__asm__ volatile("rdcycle %0"
+										 : "=r"(cycles_now));
 		cycles = cycles_now - cycles_begin;
-		if (cycles > 12000000) {
+		if (cycles > 12000000)
+		{
 			if (prompt)
 				print(prompt);
 			cycles_begin = cycles_now;
@@ -77,12 +82,12 @@ void cmd_echo()
 
 void main()
 {
- 	setup_uart(115200);
- 	print("Booting..\n");
+	setup_uart(115200);
+	print("Booting..\n");
 
 	set_flash_qspi_flag();
 
-	rgb_led(255,0,0); // red
+	rgb_led(255, 0, 0);		// red
 	pmod_led(0b00000000); // all off
 
 	cRGB color;
@@ -92,9 +97,11 @@ void main()
 	set_ws2812(color, 0); // this just to see in simulation
 	color.g = 0;
 
-	while (getchar_prompt("Press ENTER to continue..\n") != '\r') { /* wait */ }
+	while (getchar_prompt("Press ENTER to continue..\n") != '\r')
+	{ /* wait */
+	}
 
-	rgb_led(0,255,0); // green
+	rgb_led(0, 255, 0); // green
 	// pmod_led(0b11111111); // all on
 
 	lcd_init();
@@ -106,7 +113,7 @@ void main()
 
 	cmd_print_spi_state();
 	print("\n");
-	
+
 	while (1)
 	{
 		print("\n");

@@ -23,8 +23,37 @@
 
 `define PICOSOC_MEM ice40up5k_spram
 
+
+
+module pll #(
+    parameter DIVR    =  0,
+    parameter DIVF    = 66,
+    parameter DIVQ    =  3,
+    parameter FLT_RNG =  1 ) (
+	
+    input  clock_in,
+	output clock_out,
+	output locked
+	);
+
+SB_PLL40_PAD #(
+		.FEEDBACK_PATH("SIMPLE"),
+		.DIVR(DIVR),        // DIVR =  0
+		.DIVF(DIVF),        // DIVF = 66
+		.DIVQ(DIVQ),        // DIVQ =  3
+		.FILTER_RANGE(FLT_RNG) // FILTER_RANGE = 1
+	) uut (
+		.LOCK(locked),
+		.RESETB(1'b1),
+		.BYPASS(1'b0),
+		.PACKAGEPIN(clock_in),
+		.PLLOUTCORE(clock_out)
+		);
+
+endmodule
+
 module icesugar (
-	input CLK,
+	input CLK12,
 
 	output UART_TX,
 	input  UART_RX,
@@ -58,6 +87,10 @@ module icesugar (
 	inout LCD_SPI_CS,
 );
 	parameter integer MEM_WORDS = 32768;
+
+wire CLK;
+// pll pll_inst(.clock_in(CLK12), .clock_out(CLK));
+assign CLK = CLK12;
 
 	assign P2_1 = ~gpio_led_pmod[0];
 	assign P2_2 = ~gpio_led_pmod[1];
@@ -104,44 +137,11 @@ module icesugar (
 	// wire ws2812_en   = (iomem_addr[31:24] == 8'h05);
 	// wire st7735_en   = (iomem_addr[31:24] == 8'h07);
 
-	// wire leds_iomem_ready;
-	// leds leds_inst(
-	// 	.clk(CLK),
-	// 	.reset(resentn),
-	// 	.iomem_valid(iomem_valid && leds_en),
-	// 	.iomem_wstrb(iomem_wstrb),
-	// 	.iomem_addr(iomem_addr),
-	// 	.iomem_wdata(iomem_wdata),
-	// 	.iomem_ready(leds_iomem_ready)
-	// )
-
-	// wire ws2812_iomem_ready;
-	// ws2812 #(.NUM_LEDS(7)) ws2812_inst(
-	// 	.clk(CLK),
-	// 	.reset(!resentn),
-	// 	.iomem_valid(iomem_valid && ws2812_en),
-	// 	.iomem_wstrb(iomem_wstrb),
-	// 	.iomem_addr(iomem_addr),
-	// 	.iomem_wdata(iomem_wdata),
-	// 	.iomem_ready(ws2812_iomem_ready)
-	// );
-
-	// wire st7735_iomem_ready;
-	// st7735 st7735_inst(
-	// 	.clk(CLK),
-	// 	.reset(resentn),
-	// 	.iomem_valid(iomem_valid && st7735_en),
-	// 	.iomem_wstrb(iomem_wstrb),
-	// 	.iomem_addr(iomem_addr),
-	// 	.iomem_wdata(iomem_wdata),
-	// 	.iomem_ready(st7735_iomem_ready)
-	// )
-
 	// pmod and rgb Leds peripheral
-	wire [7:0] gpio_led_pmod;
-	wire [7:0] gpio_led_r;
-	wire [7:0] gpio_led_g;
-	wire [7:0] gpio_led_b;
+	reg [7:0] gpio_led_pmod;
+	reg [7:0] gpio_led_r;
+	reg [7:0] gpio_led_g;
+	reg [7:0] gpio_led_b;
 	pwm pwm_r (.clk(CLK), .pwm(gpio_led_r), .out(LED_R));
 	pwm pwm_g (.clk(CLK), .pwm(gpio_led_g), .out(LED_G));
 	pwm pwm_b (.clk(CLK), .pwm(gpio_led_b), .out(LED_B));
@@ -152,26 +152,36 @@ module icesugar (
 	reg [23:0] led_rgb_data = 0;
 	// ws2812 #(.NUM_LEDS(7)) ws2812_inst(.data(neopixel_pin), .clk(CLK), .reset(!resetn), .rgb_data(led_rgb_data), .led_num(led_num), .write(led_write));
 
-	// spi st7735 peripheral
-	// reg lcd_spi_wr;
-	// reg lcd_spi_ready;
-	// spi st7735_inst(
-	// 	.clk(CLK),
-	// 	.resetn(resetn),
-	// 	.ctrl_wr(lcd_spi_wr),
-	// 	.ctrl_addr(iomem_addr[7:0]),
-	// 	.ctrl_wdat(iomem_wdata),
-	// 	.ctrl_done(lcd_spi_ready),
-	// 	.mosi(LCD_SPI_SDA),
-	// 	.sclk(LCD_SPI_SCL),
-	// 	.cs(LCD_SPI_CS),
-	// 	.dc(LCD_SPI_DC),
-	// 	.rst(LCD_SPI_RES)
-	// );
+	wire st7735_busy;
+	SPI_interface st7735(
+		.clk(CLK),
+
+		.wstrb(iomem_valid && iomem_addr[31:24] == 8'h06 ? iomem_wstrb[0] : 1'b0),
+		.sel_cntl(iomem_addr[7:0] == 8'h04),
+		.sel_cmd(iomem_addr[7:0] == 8'h08),
+		.sel_dat(iomem_addr[7:0] == 8'h10),
+		.sel_dat16(iomem_addr[7:0] == 8'h20),
+		.wdata(iomem_wdata),
+		.wbusy(st7735_busy),
+				
+		.DIN(LCD_SPI_SDA),
+		.CLK(LCD_SPI_SCL),
+		.CS(LCD_SPI_CS),
+		.DC(LCD_SPI_DC),
+		.RST(LCD_SPI_RES)
+	);
 
 	always @(posedge CLK) begin
-		// led_write <= 0;
-		// lcd_spi_wr <= 0;
+		led_write = 0;
+		
+		// debug leds
+		// gpio_led_pmod[7] <= st7735_busy;
+		// gpio_led_pmod[6] <= lcd_write;
+		// gpio_led_pmod[0] <= iomem_addr[31:24] == 8'h06 && iomem_addr[7:0] == 'b100;
+		// gpio_led_pmod[1] <= iomem_addr[31:24] == 8'h06 && iomem_addr[7:0] == 'b1000;
+		// gpio_led_pmod[2] <= iomem_addr[31:24] == 8'h06 && iomem_addr[7:0] == 'b10000;
+		// gpio_led_pmod[3] <= iomem_addr[31:24] == 8'h06 && iomem_addr[7:0] == 'b100000;
+				
 		if (!resetn) begin
 			gpio_led_pmod <= 0;
 			gpio_led_r <= 0;
@@ -203,15 +213,8 @@ module icesugar (
 				if (iomem_wstrb[2]) led_rgb_data[15: 8] <= iomem_wdata[23:16];
 				if (iomem_wstrb[3]) led_rgb_data[23:16] <= iomem_wdata[31:24];
 			end
-			else if (iomem_valid && !iomem_ready && iomem_addr[31:24] == 8'h05) begin
-				// iomem_ready <= lcd_spi_ready;
-				// lcd_spi_wr <= lcd_spi_ready ? 0 : iomem_wstrb;
-				iomem_ready <= 1;
-				if (iomem_addr[7:0] == 8'h04) LCD_SPI_CS = iomem_wdata[0];
-				if (iomem_addr[7:0] == 8'h10) LCD_SPI_DC = iomem_wdata[0];
-				if (iomem_addr[7:0] == 8'h14) LCD_SPI_RES = iomem_wdata[0];
-				if (iomem_addr[7:0] == 8'h08) LCD_SPI_SDA = iomem_wdata[0];
-				if (iomem_addr[7:0] == 8'h0c) LCD_SPI_SCL = iomem_wdata[0];
+			else if (iomem_valid && !iomem_ready && iomem_addr[31:24] == 8'h06) begin
+				iomem_ready <= 1;//!st7735_busy;
 			end
 		end
 	end

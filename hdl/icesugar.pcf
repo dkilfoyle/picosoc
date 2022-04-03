@@ -1,7 +1,7 @@
 # iCESugar Board (iCE40UP5K-QFN48)
 
 # 12 MHz Clock
-set_io CLK          35
+set_io CLK12        35
 
 # UART via iCELink
 set_io UART_RX      4
@@ -47,9 +47,5 @@ set_io LCD_SPI_SDA   31
 set_io LCD_SPI_DC    27
 set_io LCD_SPI_SCL   25
 set_io LCD_SPI_RES   23
-#set_io SPI_LCD_P3_6  26
-#set_io SPI_LCD_P3_7  28
-#set_io SPI_LCD_P3_8  32
-
 
 set_io neopixel_pin 32
