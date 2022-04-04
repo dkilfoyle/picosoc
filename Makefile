@@ -1,7 +1,7 @@
 name = picosoc
 hdl  = hdl/icesugar.v hdl/ice40up5k_spram.v hdl/spimemio.v hdl/simpleuart.v hdl/picosoc.v hdl/picorv32.v
 pcf  = icesugar.pcf
-src  = src/start.s src/firmware.c src/spi.c src/uart.c src/mem.c src/devices/ws2812/neopixel.c src/devices/led/led.c src/devices/st7735/lcd2.c
+src  = src/start.s src/firmware.c src/spi.c src/uart.c src/mem.c src/devices/ws2812/neopixel.c src/devices/led/led.c src/devices/st7735/lcd.c
 
 RV_PRE = riscv32-unknown-elf
 CFLAGS = 
@@ -22,7 +22,7 @@ bin/$(name)_core.bin:
 bin/$(name)_firmware.bin:
 	@printf "\n====== Building firmware ======\n"
 	$(RV_PRE)-cpp -P -o icesugar.lds src/sections.lds
-	$(RV_PRE)-gcc $(CFLAGS) -march=rv32imc -Wl,-Bstatic,-T,icesugar.lds,--strip-debug -ffreestanding -nostdlib -o icesugar.elf $(src)
+	$(RV_PRE)-gcc $(CFLAGS) -march=rv32imc -mabi=ilp32 -Wl,-Bstatic,-T,icesugar.lds,--strip-debug -ffreestanding -nostdlib -o icesugar.elf $(src)
 	$(RV_PRE)-objcopy -O binary icesugar.elf bin/$(name)_firmware.bin
 	rm -rf *.lds *.elf
 

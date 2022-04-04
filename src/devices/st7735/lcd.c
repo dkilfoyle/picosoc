@@ -2,15 +2,17 @@
 #include <stdbool.h>
 #include "../../uart.h"
 #include "lcd.h"
+#include "lcdfont.h"
 #include "../led/led.h"
 
 /*
 TODO:
 1. Replace delay_ms with LIBFEMTORV32 wait_cyles/milli_wait
-2. Implement address set
+2. Implement address set = DONE
 3. Move fill to fastcode see CRT/spiflash_icesugar.ld
-4. Implement some of LIBFEMTOGL
+4. Implement some of LIBFEMTOGL = DONE
 5. Allow print to LCD
+6. Why does TypeFaceNum in showChar hang??
 */
 
 #define ST77XX_SWRESET 0x01
@@ -137,9 +139,10 @@ void lcd_init()
   send_cmd(ST77XX_INVON); // 13: Don't invert display, no args
 
   send_cmd(ST77XX_MADCTL); // 14: Mem access ctl (directions), 1 arg:
-  // send_data(0xC8);         //     row/col addr, top-bottom refresh
-  send_data(0x60); //     row/col addr, top-bottom refresh
-  // send_data(0xA0); //     row/col addr, bottom-top refresh
+  // send_data(0x60);         //     row/col addr, top-bottom refresh
+  // send_data(0x08);         //     row/col addr, top-bottom refresh
+  // send_data(0xC8); //     row/col addr, top-bottom refresh
+  send_data(0x78); //     row/col addr, top-bottom refresh
 
   send_cmd(ST77XX_CASET);
   send_data(0x00);
@@ -149,9 +152,9 @@ void lcd_init()
 
   send_cmd(ST77XX_RASET);
   send_data(0x00);
-  send_data(0x1A); // 24
+  send_data(0x1A); // 26
   send_data(0x00);
-  send_data(0x69); // 103
+  send_data(0x69); // 105
 
   send_cmd(ST77XX_COLMOD); // 15: set color mode, 1 arg, no delay:
   send_data(0x05);         //     16-bit color
@@ -166,18 +169,31 @@ void lcd_init()
   progress_led(0b1111);
   print("Done\n");
 
-  lcd_fill(0, 0, 160, 80, 0b0000011111100000);
+  lcd_fill(0, 0, 160, 80, ST77XX_BLACK);
   progress_led(0b11111);
 }
 
 uint8_t lcd_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
-  return (r & 0xe0) | ((g >> 3) & 0x1c) | (b >> 6);
+  return (b & 0xe0) | ((g >> 3) & 0x1c) | (r >> 6);
+}
+
+void lcd_address_set(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
+{
+  send_cmd(ST77XX_CASET);
+  send_data16(x1 + 1);
+  send_data16(x2 + 1);
+
+  send_cmd(ST77XX_RASET);
+  send_data16(y1 + 26);
+  send_data16(y2 + 26);
+
+  send_cmd(ST77XX_RAMWR);
 }
 
 void lcd_fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t col)
 {
-  lcd_address_set(x1, y1, x2, y2);
+  lcd_address_set(x1, y1, x2 - 1, y2 - 1);
   uint16_t i, j;
   for (i = y1; i < y2; i++)
   {
@@ -188,114 +204,140 @@ void lcd_fill(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t col)
   }
 }
 
-void lcd_address_set(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2)
+void lcd_drawPoint(uint16_t x, uint16_t y, uint16_t c)
 {
-  // send_cmd(CMD_CASET);
-  // send_data(x1 + 1);
-  // send_data(x2 + 1);
-  // send_cmd(CMD_RASET);
-  // send_data(y1 + 26);
-  // send_data(y2 + 26);
-  // send_cmd(CMD_RAMWR);
+  lcd_address_set(x, y, x, y);
+  send_data16(c);
+}
+
+void lcd_drawLine(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t c)
+{
+  uint16_t t;
+  int xerr = 0, yerr = 0, delta_x, delta_y, distance;
+  int incx, incy, uRow, uCol;
+  delta_x = x2 - x1;
+  delta_y = y2 - y1;
+  uRow = x1;
+  uCol = y1;
+  if (delta_x > 0)
+    incx = 1;
+  else if (delta_x == 0)
+    incx = 0;
+  else
+  {
+    incx = -1;
+    delta_x = -delta_x;
+  }
+  if (delta_y > 0)
+    incy = 1;
+  else if (delta_y == 0)
+    incy = 0;
+  else
+  {
+    incy = -1;
+    delta_y = -delta_y;
+  }
+  if (delta_x > delta_y)
+    distance = delta_x;
+  else
+    distance = delta_y;
+  for (t = 0; t < distance + 1; t++)
+  {
+    lcd_drawPoint(uRow, uCol, c);
+    xerr += delta_x;
+    yerr += delta_y;
+    if (xerr > distance)
+    {
+      xerr -= distance;
+      uRow += incx;
+    }
+    if (yerr > distance)
+    {
+      yerr -= distance;
+      uCol += incy;
+    }
+  }
+}
+
+void lcd_drawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2, uint16_t color)
+{
+  lcd_drawLine(x1, y1, x2, y1, color);
+  lcd_drawLine(x1, y1, x1, y2, color);
+  lcd_drawLine(x1, y2, x2, y2, color);
+  lcd_drawLine(x2, y1, x2, y2, color);
+}
+
+void lcd_showChar(uint16_t x, uint16_t y, uint8_t num, uint16_t fc, uint16_t bc, uint8_t sizey, uint8_t mode)
+{
+  print_dec(sizey);
+  uint8_t temp,
+      sizex, t, m = 0;
+  uint16_t i, TypefaceNum;
+  uint16_t x0 = x;
+  sizex = sizey / 2;
+  TypefaceNum = 16; //(sizex / 8 + ((sizex % 8) ? 1 : 0)) * sizey;
+  num = num - 32;
+  lcd_address_set(x, y, x + sizex - 1, y + sizey - 1);
+  for (i = 0; i < TypefaceNum; i++)
+  {
+    if (sizey == 12)
+      temp = ascii_1206[num][i];
+    else if (sizey == 16)
+      temp = ascii_1608[num][i];
+    else if (sizey == 24)
+      temp = ascii_2412[num][i];
+    else if (sizey == 32)
+      temp = ascii_3216[num][i];
+    else
+      return;
+    for (t = 0; t < 8; t++)
+    {
+      if (!mode)
+      {
+        if (temp & (0x01 << t))
+          send_data16(fc);
+        else
+          send_data16(bc);
+
+        m++;
+        // if (m % sizex == 0)
+        if (m == sizex)
+        {
+          m = 0;
+          break;
+        }
+      }
+      else
+      {
+        if (temp & (0x01 << t))
+          lcd_drawPoint(x, y, fc);
+        x++;
+        if ((x - x0) == sizex)
+        {
+          x = x0;
+          y++;
+          break;
+        }
+      }
+    }
+  }
+}
+
+void lcd_showString(uint16_t x, uint16_t y, const uint8_t *p, uint16_t fc, uint16_t bc, uint8_t sizey, uint8_t mode)
+{
+  while (*p != '\0')
+  {
+    lcd_showChar(x, y, *p, fc, bc, sizey, mode);
+    x += sizey / 2;
+    p++;
+  }
 }
 
 void lcd_test()
 {
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
-  send_data16(0);
+  lcd_fill(5, 5, 55, 30, ST77XX_RED);
+  lcd_fill(5, 55, 55, 70, ST77XX_BLUE);
+  lcd_drawRectangle(50, 20, 100, 40, ST77XX_GREEN);
+  lcd_drawPoint(100, 70, ST77XX_BLUE);
+  lcd_showString(60, 40, "H", ST77XX_WHITE, ST77XX_BLACK, 16, 0);
 };
